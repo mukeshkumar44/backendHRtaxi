@@ -39,8 +39,14 @@ const taxiSchema = new mongoose.Schema({
     required: [true, 'Address is required']
   },
   documents: {
-    type: String, // This will store the file path
-    required: [true, 'Documents are required']
+    url: {
+      type: String,
+      required: [true, 'Document URL is required']
+    },
+    public_id: {
+      type: String,
+      required: [true, 'Document public ID is required']
+    }
   },
   user: {
     type: mongoose.Schema.Types.ObjectId,

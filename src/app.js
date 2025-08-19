@@ -47,9 +47,18 @@ app.use(fileUpload({
   debug: true
 }));
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'success',
+    message: 'Server is running',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Log requests for debugging
 app.use((req, res, next) => {
-  console.log(`\n=== NEW REQUEST: ${req.method} ${req.path} ===`);
+  console.log(`${req.method} ${req.originalUrl}`);
   console.log('Headers:', {
     'content-type': req.headers['content-type'],
     'content-length': req.headers['content-length']

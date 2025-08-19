@@ -1,6 +1,7 @@
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const multer = require('multer');
+const path = require('path');
 
 // Configure Cloudinary
 cloudinary.config({
@@ -38,6 +39,22 @@ const galleryStorage = new CloudinaryStorage({
   }
 });
 
+// Configure storage for taxi documents
+const taxiDocumentStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'taxi-documents',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'pdf'],
+    resource_type: 'auto',
+    use_filename: true,
+    unique_filename: true
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'taxi-doc-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
 // Create multer upload instances
 const uploadTourImage = multer({ 
   storage: tourPackageStorage,
@@ -55,13 +72,26 @@ const uploadGalleryImage = multer({
   storage: galleryStorage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
+    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed!'), false);
+      cb(new Error('Only image and PDF files are allowed!'), false);
     }
   }
 }).single('image');
+
+// Create multer upload instance for taxi documents
+const uploadTaxiDocument = multer({
+  storage: taxiDocumentStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit for documents
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf' || file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF and image files are allowed!'), false);
+    }
+  }
+}).single('documents');
 
 // Function to delete image from Cloudinary
 const deleteImage = async (publicId) => {
@@ -76,6 +106,7 @@ const deleteImage = async (publicId) => {
 module.exports = {
   uploadTourImage,
   uploadGalleryImage,
+  uploadTaxiDocument,
   deleteImage,
   cloudinary
 };

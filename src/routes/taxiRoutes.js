@@ -2,15 +2,16 @@ const express = require('express');
 const router = express.Router();
 const taxiController = require('../controllers/taxiController');
 const authMiddleware = require('../middleware/authMiddleware');
-const uploadMiddleware = require('../middleware/uploadMiddleware');
+const { uploadTaxiDocument } = require('../config/cloudinary');
 
 // @route   POST /api/taxis/register
 // @desc    Register a new taxi
 // @access  Private
+// Register a new taxi with document upload to Cloudinary
 router.post(
   '/register',
   authMiddleware.protect,
-  uploadMiddleware,
+  uploadTaxiDocument,
   taxiController.registerTaxi
 );
 

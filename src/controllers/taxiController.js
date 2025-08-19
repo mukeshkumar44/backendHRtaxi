@@ -1,23 +1,40 @@
 const Taxi = require('../models/TaxiNew');
 const User = require('../models/User');
 const path = require('path');
+const { uploadTaxiDocument, cloudinary } = require('../config/cloudinary');
 
 // @desc    Register a new taxi
 // @route   POST /api/taxis/register
 // @access  Private
-exports.registerTaxi = async (req, res) => {
+exports.registerTaxi = async (req, res, next) => {
   try {
     const userId = req.user.id;
+    
+    // Check if file was uploaded
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Document file is required'
+      });
+    }
+    
+    // Check for upload errors (handled by multer)
+    if (req.fileError) {
+      return res.status(400).json({
+        success: false,
+        message: req.fileError.message || 'Error uploading document'
+      });
+    }
     
     // Check if user already has a registered taxi
     const existingTaxi = await Taxi.findOne({ user: userId });
     if (existingTaxi) {
-      // If file was uploaded but user already has a taxi, delete the uploaded file
-      if (req.file) {
-        const fs = require('fs');
-        const filePath = path.join(__dirname, '..', req.file.path);
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
+      // If file was uploaded but user already has a taxi, delete from Cloudinary
+      if (req.file && req.file.path) {
+        try {
+          await cloudinary.uploader.destroy(req.file.filename);
+        } catch (cloudinaryErr) {
+          console.error('Error deleting uploaded file from Cloudinary:', cloudinaryErr);
         }
       }
       
@@ -27,31 +44,22 @@ exports.registerTaxi = async (req, res) => {
       });
     }
 
-    // Prepare taxi data
+    // Prepare taxi data with Cloudinary URL
     const taxiData = {
       ...req.body,
       user: userId,
-      isApproved: false // Default to false for admin approval
+      isApproved: false, // Default to false for admin approval
+      documents: {
+        url: req.file.path,
+        public_id: req.file.filename
+      }
     };
 
-    // If file was uploaded, save the file path
-    if (req.file) {
-      taxiData.documents = `/uploads/${path.basename(req.file.path)}`;
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: 'Document file is required'
-      });
-    }
-
-    // Create new taxi
+      // Create new taxi
     const taxi = await Taxi.create(taxiData);
 
     // Update user role to driver
     await User.findByIdAndUpdate(userId, { role: 'driver' });
-
-    // Notify admin about new registration (you can implement this function)
-    // await notifyAdminAboutNewTaxi(taxi);
 
     res.status(201).json({
       success: true,
@@ -61,12 +69,12 @@ exports.registerTaxi = async (req, res) => {
   } catch (error) {
     console.error('Taxi registration error:', error);
     
-    // If there was an error and a file was uploaded, delete it
-    if (req.file) {
-      const fs = require('fs');
-      const filePath = path.join(__dirname, '..', req.file.path);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+    // If there was an error and a file was uploaded, delete it from Cloudinary
+    if (req.file && req.file.path) {
+      try {
+        await cloudinary.uploader.destroy(req.file.filename);
+      } catch (cloudinaryErr) {
+        console.error('Error cleaning up uploaded file from Cloudinary:', cloudinaryErr);
       }
     }
     
@@ -80,9 +88,17 @@ exports.registerTaxi = async (req, res) => {
       });
     }
     
-    res.status(500).json({
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Duplicate field value entered. Please check your input.'
+      });
+    }
+    
+    return res.status(500).json({
       success: false,
-      message: 'Error registering taxi. Please try again.'
+      message: 'Server error'
     });
   }
 };

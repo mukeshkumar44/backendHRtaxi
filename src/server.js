@@ -7,7 +7,31 @@ const { app, server } = require('./app');
 require('dotenv').config();
 
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/hrtaxi';
+// Use MongoDB Atlas connection string
+// MongoDB Atlas connection
+const MONGODB_URI = "mongodb+srv://mk8701952:PlnKXynqQHZewAT7@cluster0.e6mpcfg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+
+console.log('Attempting to connect to MongoDB Atlas...');
+
+// Connection events
+mongoose.connection.on('connecting', () => {
+  console.log('Connecting to MongoDB...');
+});
+
+mongoose.connection.on('connected', () => {
+  console.log('✅ MongoDB connected successfully');
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('❌ MongoDB connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('ℹ️  MongoDB disconnected');
+});
+
+// Enable Mongoose debug mode
+mongoose.set('debug', true);
 
 // Middleware
 app.use(cors());
@@ -61,21 +85,31 @@ app.post('/api/contact', (req, res) => {
   });
 });
 
-// Connect to MongoDB
-mongoose.connect(MONGODB_URI)
-  .then(() => {
-    console.log('Connected to MongoDB');
-    
-    // Start server
-    server.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log(`API Documentation: http://localhost:${PORT}/api-docs`);
-    });
-  })
-  .catch(err => {
-    console.error('MongoDB connection error:', err);
-    process.exit(1);
+// Connect to MongoDB with detailed logging
+console.log('Attempting to connect to MongoDB...');
+console.log('Connection string:', MONGODB_URI);
+
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 10000, // Increased timeout
+  socketTimeoutMS: 30000, // Added socket timeout
+  connectTimeoutMS: 10000, // Added connection timeout
+  maxPoolSize: 10, // Maximum number of connections in the connection pool
+  retryWrites: true,
+  w: 'majority'
+}).then(() => {
+  console.log('✅ Connected to MongoDB');
+  
+  // Start server
+  server.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
   });
+}).catch(err => {
+  console.error('❌ MongoDB connection error:', err);
+  process.exit(1);
+});
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
