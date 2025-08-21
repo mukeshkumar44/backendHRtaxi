@@ -80,7 +80,12 @@ const upload = multer({
 
 // Create a custom middleware for taxi document uploads
 const handleTaxiDocumentUpload = (req, res, next) => {
-  upload.single('document')(req, res, function (err) {
+  // Use field name 'documents' (plural) to match frontend, fallback to 'document' for backward compatibility
+  const uploadMiddleware = req.get('content-type')?.includes('multipart/form-data') 
+    ? upload.single('documents') 
+    : upload.single('document');
+    
+  uploadMiddleware(req, res, function (err) {
     if (err instanceof multer.MulterError) {
       // A Multer error occurred when uploading
       return res.status(400).json({

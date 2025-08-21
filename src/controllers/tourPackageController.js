@@ -1,5 +1,7 @@
 const TourPackage = require('../models/TourPackage');
 const { uploadTourImage, deleteImage, cloudinary } = require('../config/cloudinary');
+const path = require('path');
+const fs = require('fs');
 
 // @desc    Get all tour packages
 // @route   GET /api/tour-packages
@@ -53,58 +55,100 @@ exports.getTourPackage = async (req, res) => {
 // @access  Private/Admin
 exports.createTourPackage = async (req, res) => {
   try {
-    // Handle file upload using Cloudinary
-    await new Promise((resolve, reject) => {
-      uploadTourImage(req, res, (err) => {
-        if (err) {
-          return reject(err);
-        }
-        resolve();
-      });
-    });
-
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please upload an image'
-      });
-    }
+    console.log('=== REQUEST BODY ===');
+    console.log(req.body);
+    console.log('=== FILES ===');
+    console.log(req.files);
+    console.log('=== HEADERS ===');
+    console.log(req.headers);
 
     const { title, description, price, duration, location, isPopular, features } = req.body;
     
-    // Create tour package with Cloudinary image URL
-    const tourPackage = await TourPackage.create({
+    // Validate required fields
+    if (!title || !description || !price || !duration || !location) {
+      console.log('Validation failed - Missing required fields');
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields',
+        required: ['title', 'description', 'price', 'duration', 'location'],
+        received: { title, description, price, duration, location }
+      });
+    }
+
+    // Initialize tour package data
+    const tourPackageData = {
       title,
       description,
-      price,
+      price: Number(price),
       duration,
       location,
       isPopular: isPopular === 'true',
-      features: features ? features.split(',').map(f => f.trim()) : [],
-      image: req.file.path, // Cloudinary URL
-      imagePublicId: req.file.filename // Cloudinary public ID for future deletion
-    });
+      features: features ? features.split(',').map(f => f.trim()) : []
+    };
+
+    // Handle file upload if exists
+    if (req.files && req.files.image) {
+      const image = req.files.image;
+      console.log('Processing image upload:', image.name);
+      
+      // Check if file is an image
+      if (!image.mimetype.startsWith('image')) {
+        console.log('Invalid file type:', image.mimetype);
+        return res.status(400).json({
+          success: false,
+          message: 'Please upload an image file'
+        });
+      }
+
+      // Generate unique filename
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const ext = image.name.split('.').pop();
+      const filename = `tour-${uniqueSuffix}.${ext}`;
+      const uploadPath = path.join(__dirname, '../../public/uploads/tours', filename);
+      
+      // Create directory if it doesn't exist
+      const dir = path.dirname(uploadPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      
+      // Move the file
+      await image.mv(uploadPath);
+      console.log('File saved to:', uploadPath);
+      
+      // Set image path in database
+      tourPackageData.image = `/uploads/tours/${filename}`;
+    } else {
+      console.log('No image file found in request');
+    }
+
+    console.log('Creating tour package with data:', tourPackageData);
+    const tourPackage = await TourPackage.create(tourPackageData);
+    console.log('Tour package created successfully:', tourPackage._id);
 
     res.status(201).json({
       success: true,
       data: tourPackage
     });
-  } catch (error) {
-    console.error('Error creating tour package:', error);
     
-    // If there was an error and a file was uploaded, delete it from Cloudinary
-    if (req.file?.filename) {
+  } catch (error) {
+    console.error('Error in createTourPackage:', error);
+    
+    // If there was an error and a file was uploaded, delete it
+    if (req.files?.image?.tempFilePath) {
       try {
-        await cloudinary.uploader.destroy(req.file.filename);
+        fs.unlinkSync(req.files.image.tempFilePath);
+        console.log('Cleaned up temp file');
       } catch (err) {
-        console.error('Error cleaning up image from Cloudinary:', err);
+        console.error('Error deleting temp file:', err);
       }
     }
     
     res.status(500).json({
       success: false,
-      message: 'Server Error',
-      error: error.message
+      message: 'Error creating tour package',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Server error',
+      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
     });
   }
 };
@@ -123,38 +167,30 @@ exports.updateTourPackage = async (req, res) => {
       });
     }
     
-    // Handle file upload if a new image is provided
+    const { title, description, price, duration, location, isPopular, features } = req.body;
+    
+    // Update fields
+    tourPackage.title = title || tourPackage.title;
+    tourPackage.description = description || tourPackage.description;
+    tourPackage.price = price || tourPackage.price;
+    tourPackage.duration = duration || tourPackage.duration;
+    tourPackage.location = location || tourPackage.location;
+    tourPackage.isPopular = isPopular ? isPopular === 'true' : tourPackage.isPopular;
+    tourPackage.features = features ? features.split(',').map(f => f.trim()) : tourPackage.features;
+
+    // If there's a new image
     if (req.file) {
-      // Delete old image from Cloudinary if it exists
+      // Delete old image if exists
       if (tourPackage.imagePublicId) {
-        try {
-          await deleteImage(tourPackage.imagePublicId);
-        } catch (err) {
-          console.error('Error deleting old image from Cloudinary:', err);
-        }
+        await deleteImage(tourPackage.imagePublicId);
       }
       
-      // Update image details with new Cloudinary URL and public ID
-      req.body.image = req.file.path;
-      req.body.imagePublicId = req.file.filename;
+      tourPackage.image = req.file.path;
+      tourPackage.imagePublicId = req.file.filename;
     }
-    
-    // Convert isPopular to boolean
-    if (req.body.isPopular) {
-      req.body.isPopular = req.body.isPopular === 'true';
-    }
-    
-    // Convert features to array if it's a string
-    if (req.body.features && typeof req.body.features === 'string') {
-      req.body.features = req.body.features.split(',').map(f => f.trim());
-    }
-    
-    // Update tour package
-    tourPackage = await TourPackage.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true
-    });
-    
+
+    await tourPackage.save();
+
     res.status(200).json({
       success: true,
       data: tourPackage
@@ -162,18 +198,14 @@ exports.updateTourPackage = async (req, res) => {
   } catch (error) {
     console.error('Error updating tour package:', error);
     
-    // If there was an error and a new file was uploaded, delete it from Cloudinary
+    // If there was an error and a new file was uploaded, delete it
     if (req.file?.filename) {
-      try {
-        await cloudinary.uploader.destroy(req.file.filename);
-      } catch (err) {
-        console.error('Error cleaning up image from Cloudinary:', err);
-      }
+      await cloudinary.uploader.destroy(req.file.filename);
     }
     
     res.status(500).json({
       success: false,
-      message: 'Server Error',
+      message: 'Error updating tour package',
       error: error.message
     });
   }
@@ -193,14 +225,9 @@ exports.deleteTourPackage = async (req, res) => {
       });
     }
     
-    // Delete image from Cloudinary if it exists
+    // Delete image from Cloudinary if exists
     if (tourPackage.imagePublicId) {
-      try {
-        await deleteImage(tourPackage.imagePublicId);
-      } catch (err) {
-        console.error('Error deleting image from Cloudinary:', err);
-        // Continue with deletion even if image deletion fails
-      }
+      await deleteImage(tourPackage.imagePublicId);
     }
     
     await tourPackage.remove();
@@ -214,7 +241,7 @@ exports.deleteTourPackage = async (req, res) => {
     
     res.status(500).json({
       success: false,
-      message: 'Server Error',
+      message: 'Error deleting tour package',
       error: error.message
     });
   }

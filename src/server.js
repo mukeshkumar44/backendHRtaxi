@@ -3,6 +3,8 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
 const fileUpload = require('express-fileupload');
+const helmet = require('helmet');
+const morgan = require('morgan');
 const { app, server } = require('./app');
 require('dotenv').config();
 
@@ -30,13 +32,30 @@ mongoose.connection.on('disconnected', () => {
   console.log('ℹ️  MongoDB disconnected');
 });
 
-// Enable Mongoose debug mode
-mongoose.set('debug', true);
+// Configure Mongoose
+mongoose.set('debug', false); // Disable debug mode
+mongoose.set('autoIndex', false); // Disable automatic index creation on connection
 
 // Middleware
-app.use(cors());
-app.use(bodyParser.json({ limit: '50mb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
+app.use(helmet());
+app.use(morgan('dev'));
+
+// Increase payload size limit
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// CORS configuration
+const corsOptions = {
+  origin: ['http://localhost:3000', 'http://localhost:5000'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // File upload middleware
 app.use(fileUpload({
@@ -55,6 +74,7 @@ if (!fs.existsSync('./tmp')) {
 
 // Import routes
 const galleryRoutes = require('./routes/galleryRoutes');
+const tourPackageRoutes = require('./routes/tourPackageRoutes');
 
 // Routes
 app.get('/', (req, res) => {
@@ -63,6 +83,7 @@ app.get('/', (req, res) => {
 
 // API Routes
 app.use('/api/gallery', galleryRoutes);
+app.use('/api/tour-packages', tourPackageRoutes);
 
 // Booking API Route
 app.post('/api/bookings', (req, res) => {
@@ -85,31 +106,29 @@ app.post('/api/contact', (req, res) => {
   });
 });
 
-// Connect to MongoDB with detailed logging
-console.log('Attempting to connect to MongoDB...');
-console.log('Connection string:', MONGODB_URI);
-
-mongoose.connect(MONGODB_URI, {
+// Connect to MongoDB with options
+const mongooseOptions = {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 10000, // Increased timeout
-  socketTimeoutMS: 30000, // Added socket timeout
-  connectTimeoutMS: 10000, // Added connection timeout
-  maxPoolSize: 10, // Maximum number of connections in the connection pool
-  retryWrites: true,
-  w: 'majority'
-}).then(() => {
-  console.log('✅ Connected to MongoDB');
-  
-  // Start server
-  server.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
+  autoIndex: false, // Disable automatic index creation
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000
+};
+
+mongoose.connect(MONGODB_URI, mongooseOptions)
+  .then(() => {
+    console.log('Connected to MongoDB');
+    
+    // Start server
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log(`API Documentation: http://localhost:${PORT}/api-docs`);
+    });
+  })
+  .catch(err => {
+    console.error('MongoDB connection error:', err);
+    process.exit(1);
   });
-}).catch(err => {
-  console.error('❌ MongoDB connection error:', err);
-  process.exit(1);
-});
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {

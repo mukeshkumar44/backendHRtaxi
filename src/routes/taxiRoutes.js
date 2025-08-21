@@ -11,7 +11,17 @@ const { uploadTaxiDocument } = require('../config/cloudinary');
 router.post(
   '/register',
   authMiddleware.protect,
+  (req, res, next) => {
+    console.log('Request headers:', req.headers);
+    console.log('Request files:', req.files);
+    console.log('Request body:', req.body);
+    next();
+  },
   uploadTaxiDocument,
+  (req, res, next) => {
+    console.log('After upload middleware - File:', req.file);
+    next();
+  },
   taxiController.registerTaxi
 );
 

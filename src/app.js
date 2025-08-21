@@ -29,7 +29,17 @@ const io = initSocket(server);
 app.set('io', io);
 
 // Middleware
-app.use(cors());
+const corsOptions = {
+  origin: ['http://localhost:3000', 'http://localhost:5000'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
@@ -38,8 +48,13 @@ app.use(express.urlencoded({ extended: true }));
 // File upload configuration - must be before express.json()
 app.use(fileUpload({
   createParentPath: true,
+  useTempFiles: true, // Use temporary files instead of memory
+  tempFileDir: './tmp/', // Temporary directory for file uploads
+  safeFileNames: true,
+  preserveExtension: true,
+  abortOnLimit: true,
   limits: { 
-    fileSize: 5 * 1024 * 1024, // 5MB limit
+    fileSize: 10 * 1024 * 1024, // 10MB limit
     files: 1
   },
   useTempFiles: true,
