@@ -23,25 +23,47 @@ const tourPackageSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Location is required']
   },
-  image: {
-    type: String,
-    required: [true, 'Image is required']
-  },
-  imagePublicId: {
-    type: String,
-    required: [true, 'Image public ID is required']
-  },
   isPopular: {
     type: Boolean,
     default: false
   },
   features: [{
-    type: String
+    type: String,
+    trim: true
   }],
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
+  image: {
+    url: {
+      type: String,
+      required: [true, 'Image URL is required']
+    },
+    public_id: {
+      type: String,
+      required: [true, 'Image public ID is required']
+    }
+  },
+  highlights: [{
+    type: String,
+    trim: true
+  }],
+  included: [{
+    type: String,
+    trim: true
+  }],
+  notIncluded: [{
+    type: String,
+    trim: true
+  }]
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// Add text index for search functionality
+tourPackageSchema.index({
+  title: 'text',
+  description: 'text',
+  location: 'text'
 });
 
 module.exports = mongoose.model('TourPackage', tourPackageSchema);

@@ -2,6 +2,8 @@ const TourPackage = require('../models/TourPackage');
 const { uploadTourImage, deleteImage, cloudinary } = require('../config/cloudinary');
 const path = require('path');
 const fs = require('fs');
+const { promisify } = require('util');
+const upload = promisify(cloudinary.uploader.upload);
 
 // @desc    Get all tour packages
 // @route   GET /api/tour-packages
@@ -55,75 +57,63 @@ exports.getTourPackage = async (req, res) => {
 // @access  Private/Admin
 exports.createTourPackage = async (req, res) => {
   try {
-    console.log('=== REQUEST BODY ===');
-    console.log(req.body);
-    console.log('=== FILES ===');
-    console.log(req.files);
-    console.log('=== HEADERS ===');
-    console.log(req.headers);
+    console.log('Request body:', req.body);
+    console.log('Uploaded file:', req.file);
 
-    const { title, description, price, duration, location, isPopular, features } = req.body;
+    const { title, description, price, duration, location, isPopular, features, highlights, included, notIncluded } = req.body;
     
     // Validate required fields
     if (!title || !description || !price || !duration || !location) {
-      console.log('Validation failed - Missing required fields');
       return res.status(400).json({
         success: false,
         message: 'Please provide all required fields',
-        required: ['title', 'description', 'price', 'duration', 'location'],
-        received: { title, description, price, duration, location }
+        required: ['title', 'description', 'price', 'duration', 'location']
       });
     }
 
-    // Initialize tour package data
-    const tourPackageData = {
-      title,
-      description,
-      price: Number(price),
-      duration,
-      location,
-      isPopular: isPopular === 'true',
-      features: features ? features.split(',').map(f => f.trim()) : []
+    // Check if image was uploaded
+    if (!req.files || !req.files.image) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please upload an image for the tour package'
+      });
+    }
+    const image = req.files.image;
+    // Upload image to Cloudinary
+    const result = await cloudinary.uploader.upload(image.tempFilePath, {
+      folder: 'tour-packages',
+      width: 1200,
+      height: 800,
+      crop: 'limit'
+    });
+    // Parse array fields
+    const parseArray = (value) => {
+      if (!value) return [];
+      try {
+        return typeof value === 'string' ? JSON.parse(value) : value;
+      } catch (e) {
+        return value.split(',').map(item => item.trim()).filter(Boolean);
+      }
     };
 
-    // Handle file upload if exists
-    if (req.files && req.files.image) {
-      const image = req.files.image;
-      console.log('Processing image upload:', image.name);
-      
-      // Check if file is an image
-      if (!image.mimetype.startsWith('image')) {
-        console.log('Invalid file type:', image.mimetype);
-        return res.status(400).json({
-          success: false,
-          message: 'Please upload an image file'
-        });
+    // Create tour package
+    const tourPackage = await TourPackage.create({
+      title: title.trim(),
+      description: description.trim(),
+      price: Number(price),
+      duration: duration.trim(),
+      location: location.trim(),
+      isPopular: isPopular === 'true',
+      features: parseArray(features),
+      highlights: parseArray(highlights),
+      included: parseArray(included),
+      notIncluded: parseArray(notIncluded),
+      image: {
+        url: result.secure_url,
+        public_id: result.public_id
       }
+    });
 
-      // Generate unique filename
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-      const ext = image.name.split('.').pop();
-      const filename = `tour-${uniqueSuffix}.${ext}`;
-      const uploadPath = path.join(__dirname, '../../public/uploads/tours', filename);
-      
-      // Create directory if it doesn't exist
-      const dir = path.dirname(uploadPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      
-      // Move the file
-      await image.mv(uploadPath);
-      console.log('File saved to:', uploadPath);
-      
-      // Set image path in database
-      tourPackageData.image = `/uploads/tours/${filename}`;
-    } else {
-      console.log('No image file found in request');
-    }
-
-    console.log('Creating tour package with data:', tourPackageData);
-    const tourPackage = await TourPackage.create(tourPackageData);
     console.log('Tour package created successfully:', tourPackage._id);
 
     res.status(201).json({
@@ -134,21 +124,15 @@ exports.createTourPackage = async (req, res) => {
   } catch (error) {
     console.error('Error in createTourPackage:', error);
     
-    // If there was an error and a file was uploaded, delete it
-    if (req.files?.image?.tempFilePath) {
-      try {
-        fs.unlinkSync(req.files.image.tempFilePath);
-        console.log('Cleaned up temp file');
-      } catch (err) {
-        console.error('Error deleting temp file:', err);
-      }
+    // Clean up uploaded file if there was an error
+    if (result?.public_id) {
+      await cloudinary.uploader.destroy(result.public_id);
     }
     
     res.status(500).json({
       success: false,
       message: 'Error creating tour package',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Server error',
-      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Server error'
     });
   }
 };
@@ -178,15 +162,25 @@ exports.updateTourPackage = async (req, res) => {
     tourPackage.isPopular = isPopular ? isPopular === 'true' : tourPackage.isPopular;
     tourPackage.features = features ? features.split(',').map(f => f.trim()) : tourPackage.features;
 
-    // If there's a new image
+    // Check if a new image was uploaded
     if (req.file) {
-      // Delete old image if exists
-      if (tourPackage.imagePublicId) {
-        await deleteImage(tourPackage.imagePublicId);
+      // Delete the old image from Cloudinary if it exists
+      if (tourPackage.image && tourPackage.image.public_id) {
+        await deleteImage(tourPackage.image.public_id);
       }
-      
-      tourPackage.image = req.file.path;
-      tourPackage.imagePublicId = req.file.filename;
+
+      // Upload new image to Cloudinary
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: 'tour-packages',
+        width: 1200,
+        height: 800,
+        crop: 'limit'
+      });
+
+      tourPackage.image = {
+        url: result.secure_url,
+        public_id: result.public_id
+      };
     }
 
     await tourPackage.save();
@@ -225,9 +219,9 @@ exports.deleteTourPackage = async (req, res) => {
       });
     }
     
-    // Delete image from Cloudinary if exists
-    if (tourPackage.imagePublicId) {
-      await deleteImage(tourPackage.imagePublicId);
+    // Delete image from Cloudinary if it exists
+    if (tourPackage.image && tourPackage.image.public_id) {
+      await deleteImage(tourPackage.image.public_id);
     }
     
     await tourPackage.remove();

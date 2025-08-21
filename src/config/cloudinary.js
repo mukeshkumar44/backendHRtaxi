@@ -15,7 +15,7 @@ const tourPackageStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: 'tour-packages',
-    allowed_formats: ['jpg', 'jpeg', 'png'],
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
     transformation: [{ width: 1200, height: 800, crop: 'limit' }],
     resource_type: 'auto'
   },
@@ -60,10 +60,13 @@ const taxiDocumentStorage = new CloudinaryStorage({
   }
 });
 
-// Create multer instance with proper configuration
+// Create memory storage for file uploads
+const memoryStorage = multer.memoryStorage();
+
+// Create multer instance for tour image uploads
 const uploadTourImage = (req, res, next) => {
   const upload = multer({
-    storage: tourPackageStorage,
+    storage: memoryStorage,
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
     fileFilter: (req, file, cb) => {
       if (!file.mimetype.startsWith('image/')) {
@@ -76,9 +79,15 @@ const uploadTourImage = (req, res, next) => {
   upload(req, res, function (err) {
     if (err) {
       if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ success: false, message: 'File size too large. Max 5MB allowed.' });
+        return res.status(400).json({ 
+          success: false, 
+          message: 'File size too large. Max 5MB allowed.' 
+        });
       }
-      return res.status(400).json({ success: false, message: err.message });
+      return res.status(400).json({ 
+        success: false, 
+        message: err.message 
+      });
     }
     next();
   });

@@ -60,7 +60,7 @@ app.options('*', cors(corsOptions));
 // File upload middleware
 app.use(fileUpload({
   useTempFiles: true,
-  tempFileDir: './tmp/',
+  tempFileDir: '/tmp/',
   createParentPath: true,
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max file size
   abortOnLimit: true
