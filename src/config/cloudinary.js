@@ -64,32 +64,62 @@ const taxiDocumentStorage = new CloudinaryStorage({
 const memoryStorage = multer.memoryStorage();
 
 // Create multer instance for tour image uploads
-const uploadTourImage = (req, res, next) => {
-  const upload = multer({
-    storage: memoryStorage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-    fileFilter: (req, file, cb) => {
-      if (!file.mimetype.startsWith('image/')) {
-        return cb(new Error('Only image files are allowed!'), false);
-      }
+const uploadTourImage = multer({
+  storage: memoryStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+    files: 1
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
       cb(null, true);
+    } else {
+      cb(new Error('Not an image! Please upload only images.'), false);
     }
-  }).single('image');
+  }
+}).single('image');
 
-  upload(req, res, function (err) {
+// Middleware to handle the upload
+const handleTourImageUpload = (req, res, next) => {
+  uploadTourImage(req, res, async (err) => {
     if (err) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'File size too large. Max 5MB allowed.' 
-        });
-      }
-      return res.status(400).json({ 
-        success: false, 
-        message: err.message 
+      console.error('Upload error:', err);
+      return res.status(400).json({
+        success: false,
+        message: err.message || 'Error uploading file',
+        error: process.env.NODE_ENV === 'development' ? err : undefined
       });
     }
-    next();
+
+    // If no file was uploaded, continue to the next middleware
+    if (!req.file) {
+      console.log('No file uploaded');
+      return next();
+    }
+
+    try {
+      // Convert buffer to base64
+      const base64Data = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      
+      // Upload to Cloudinary
+      const result = await cloudinary.uploader.upload(base64Data, {
+        folder: 'tour-packages',
+        width: 1200,
+        height: 800,
+        crop: 'limit'
+      });
+
+      // Attach the result to the request object
+      req.file.cloudinaryResult = result;
+      next();
+    } catch (error) {
+      console.error('Cloudinary upload error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error processing file upload',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
   });
 };
 
@@ -105,81 +135,82 @@ const uploadGalleryImage = multer({
   }
 }).single('image');
 
-// Create multer upload instance for taxi documents
-const uploadTaxiDocument = (req, res, next) => {
-  console.log('Starting file upload...');
-  console.log('Request headers:', req.headers);
-  
-  // Check if the request is multipart/form-data
-  if (!req.is('multipart/form-data')) {
-    return res.status(400).json({
-      success: false,
-      message: 'Content-Type must be multipart/form-data'
-    });
-  }
-  
-  const multerUpload = multer({
-    storage: taxiDocumentStorage,
-    limits: {
-      fileSize: 10 * 1024 * 1024, // 10MB
-      files: 1,
-      fields: 10 // Number of non-file fields to accept
-    },
-    fileFilter: (req, file, cb) => {
-      console.log('Processing file:', file);
-      const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
-      if (file && allowedTypes.includes(file.mimetype)) {
-        console.log('File type accepted:', file.mimetype);
-        cb(null, true);
-      } else {
-        console.error('Invalid file type:', file.mimetype);
-        cb(new Error('Only PDF, JPG, and PNG files are allowed'));
-      }
+// Configure multer for taxi documents
+const uploadTaxiDocument = multer({
+  storage: memoryStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+    files: 1,
+    parts: 20 // Increase parts limit for form data
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+    if (file && allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF, JPG, and PNG files are allowed (max 10MB)'), false);
     }
-  });
-  
-  // Handle both 'document' and 'documents' field names
-  const upload = multerUpload.fields([
-    { name: 'documents', maxCount: 1 },
-    { name: 'document', maxCount: 1 }
-  ]);
-  
-  // Handle multer errors
-  upload(req, res, (err) => {
+  }
+}).single('documents');
+
+// Middleware to handle taxi document upload
+const handleTaxiDocumentUpload = (req, res, next) => {
+  uploadTaxiDocument(req, res, (err) => {
     if (err) {
-      console.error('Multer error:', err);
+      console.error('Upload error:', err);
       return res.status(400).json({
         success: false,
         message: err.message || 'Error uploading file',
-        error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
       });
     }
-    
-    // Handle the uploaded file from either field name
-    if (req.files) {
-      // Check for 'documents' field first, then 'document'
-      const files = req.files['documents'] || req.files['document'];
-      if (!files || files.length === 0) {
-        console.error('No file uploaded');
-        return res.status(400).json({
-          success: false,
-          message: 'Please upload a document file (PDF, JPG, or PNG)'
-        });
-      }
-      
-      // Attach the first file to req.file for backward compatibility
-      req.file = files[0];
-    } else if (!req.file) {
-      console.error('No file uploaded');
+
+    // If no file was uploaded
+    if (!req.file) {
+      console.log('No file was uploaded');
       return res.status(400).json({
         success: false,
         message: 'Please upload a document file (PDF, JPG, or PNG)'
       });
     }
-    
-    console.log('File uploaded successfully:', req.file);
+
+    // Verify file exists and has data
+    if (!req.file.buffer || req.file.buffer.length === 0) {
+      console.error('Uploaded file is empty');
+      return res.status(400).json({
+        success: false,
+        message: 'Uploaded file is empty'
+      });
+    }
+
     next();
   });
+};
+
+// Function to upload file to Cloudinary
+const uploadToCloudinary = async (file) => {
+  try {
+    const base64Data = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+    const result = await cloudinary.uploader.upload(base64Data, {
+      folder: 'taxi-documents',
+      resource_type: 'auto',
+      public_id: `taxi-doc-${Date.now()}`
+    });
+    return result;
+  } catch (error) {
+    console.error('Cloudinary upload error:', error);
+    throw error;
+  }
+};
+
+// Function to delete file from Cloudinary
+const deleteFromCloudinary = async (publicId) => {
+  try {
+    await cloudinary.uploader.destroy(publicId);
+  } catch (error) {
+    console.error('Error deleting file from Cloudinary:', error);
+    throw error;
+  }
 };
 
 // Function to delete image from Cloudinary
@@ -194,9 +225,11 @@ const deleteImage = async (publicId) => {
 };
 
 module.exports = {
-  uploadTourImage,
+  uploadTourImage: handleTourImageUpload,
   uploadGalleryImage,
-  uploadTaxiDocument,
+  uploadTaxiDocument: handleTaxiDocumentUpload,
   deleteImage,
-  cloudinary
+  cloudinary,
+  uploadToCloudinary,
+  deleteFromCloudinary
 };

@@ -75,6 +75,7 @@ if (!fs.existsSync('./tmp')) {
 // Import routes
 const galleryRoutes = require('./routes/galleryRoutes');
 const tourPackageRoutes = require('./routes/tourPackageRoutes');
+const taxiRoutes = require('./routes/taxiRoutes');
 
 // Routes
 app.get('/', (req, res) => {
@@ -84,6 +85,7 @@ app.get('/', (req, res) => {
 // API Routes
 app.use('/api/gallery', galleryRoutes);
 app.use('/api/tour-packages', tourPackageRoutes);
+app.use('/api/taxis', taxiRoutes);
 
 // Booking API Route
 app.post('/api/bookings', (req, res) => {

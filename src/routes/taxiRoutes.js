@@ -3,24 +3,31 @@ const router = express.Router();
 const taxiController = require('../controllers/taxiController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { uploadTaxiDocument } = require('../config/cloudinary');
+const { handleTaxiDocumentUpload } = require('../middleware/fileUpload');
+
 
 // @route   POST /api/taxis/register
 // @desc    Register a new taxi
 // @access  Private
-// Register a new taxi with document upload to Cloudinary
 router.post(
   '/register',
   authMiddleware.protect,
+  handleTaxiDocumentUpload,
+  uploadTaxiDocument.single('documents'),
+  authMiddleware.checkOnlineStatus,
   (req, res, next) => {
-    console.log('Request headers:', req.headers);
-    console.log('Request files:', req.files);
-    console.log('Request body:', req.body);
-    next();
-  },
-  uploadTaxiDocument,
-  (req, res, next) => {
-    console.log('After upload middleware - File:', req.file);
-    next();
+    // Add error handling for file upload
+    uploadTaxiDocument(req, res, function(err) {
+      if (err) {
+        console.error('File upload error:', err);
+        return res.status(400).json({
+          success: false,
+          message: err.message || 'Error uploading file',
+          error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+      }
+      next();
+    });
   },
   taxiController.registerTaxi
 );

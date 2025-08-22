@@ -60,7 +60,7 @@ exports.createTourPackage = async (req, res) => {
     console.log('Request body:', req.body);
     console.log('Uploaded file:', req.file);
 
-    const { title, description, price, duration, location, isPopular, features, highlights, included, notIncluded } = req.body;
+    const { title, description, price, duration, location, isPopular, features } = req.body;
     
     // Validate required fields
     if (!title || !description || !price || !duration || !location) {
@@ -71,28 +71,37 @@ exports.createTourPackage = async (req, res) => {
       });
     }
 
-    // Check if image was uploaded
-    if (!req.files || !req.files.image) {
+    // Check if image was uploaded and processed by middleware
+    if (!req.file?.cloudinaryResult) {
       return res.status(400).json({
         success: false,
-        message: 'Please upload an image for the tour package'
+        message: 'Please upload a valid image for the tour package'
       });
     }
-    const image = req.files.image;
-    // Upload image to Cloudinary
-    const result = await cloudinary.uploader.upload(image.tempFilePath, {
-      folder: 'tour-packages',
-      width: 1200,
-      height: 800,
-      crop: 'limit'
-    });
+
+    const cloudinaryResult = req.file.cloudinaryResult;
+
     // Parse array fields
     const parseArray = (value) => {
       if (!value) return [];
       try {
-        return typeof value === 'string' ? JSON.parse(value) : value;
+        // If it's a string that looks like an array, parse it
+        if (typeof value === 'string' && value.startsWith('[')) {
+          return JSON.parse(value);
+        }
+        // If it's a string with commas, split it
+        if (typeof value === 'string') {
+          return value.split(',').map(item => item.trim()).filter(Boolean);
+        }
+        // If it's already an array, return it
+        if (Array.isArray(value)) {
+          return value;
+        }
+        // Otherwise, wrap it in an array
+        return [value];
       } catch (e) {
-        return value.split(',').map(item => item.trim()).filter(Boolean);
+        console.error('Error parsing array:', e);
+        return [];
       }
     };
 
@@ -103,14 +112,11 @@ exports.createTourPackage = async (req, res) => {
       price: Number(price),
       duration: duration.trim(),
       location: location.trim(),
-      isPopular: isPopular === 'true',
+      isPopular: isPopular === 'true' || isPopular === true,
       features: parseArray(features),
-      highlights: parseArray(highlights),
-      included: parseArray(included),
-      notIncluded: parseArray(notIncluded),
       image: {
-        url: result.secure_url,
-        public_id: result.public_id
+        url: cloudinaryResult.secure_url,
+        public_id: cloudinaryResult.public_id
       }
     });
 
@@ -124,15 +130,11 @@ exports.createTourPackage = async (req, res) => {
   } catch (error) {
     console.error('Error in createTourPackage:', error);
     
-    // Clean up uploaded file if there was an error
-    if (result?.public_id) {
-      await cloudinary.uploader.destroy(result.public_id);
-    }
-    
     res.status(500).json({
       success: false,
       message: 'Error creating tour package',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Server error'
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Server error',
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };

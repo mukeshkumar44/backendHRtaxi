@@ -3,12 +3,7 @@ const router = express.Router();
 const tourPackageController = require('../controllers/tourPackageController');
 const { uploadTourImage } = require('../config/cloudinary');
 const { protect, admin } = require('../middleware/auth');
-const fileUpload = require('express-fileupload');
-router.use(fileUpload({
-  useTempFiles: true,
-  tempFileDir: './tmp/',
-  createParentPath: true
-}));
+
 // Public routes - No authentication required
 router.get('/', tourPackageController.getTourPackages);
 router.get('/:id', tourPackageController.getTourPackage);
@@ -18,16 +13,39 @@ router.post(
   '/',
   protect,
   admin,
-  upload.single('image'),
+  (req, res, next) => {
+    uploadTourImage(req, res, (err) => {
+      if (err) {
+        console.error('File upload error:', err);
+        return res.status(400).json({
+          success: false,
+          message: err.message || 'Error uploading file',
+          error: process.env.NODE_ENV === 'development' ? err : undefined
+        });
+      }
+      next();
+    });
+  },
   tourPackageController.createTourPackage
 );
-
 
 router.put(
   '/:id',
   protect,
   admin,
-  uploadTourImage, // This handles the file upload
+  (req, res, next) => {
+    uploadTourImage(req, res, (err) => {
+      if (err) {
+        console.error('File upload error:', err);
+        return res.status(400).json({
+          success: false,
+          message: err.message || 'Error uploading file',
+          error: process.env.NODE_ENV === 'development' ? err : undefined
+        });
+      }
+      next();
+    });
+  },
   tourPackageController.updateTourPackage
 );
 
