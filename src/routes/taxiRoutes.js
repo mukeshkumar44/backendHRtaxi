@@ -3,8 +3,7 @@ const router = express.Router();
 const taxiController = require('../controllers/taxiController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { uploadTaxiDocument } = require('../config/cloudinary');
-const { handleTaxiDocumentUpload } = require('../middleware/fileUpload');
-
+const handleFileUpload = require('../middleware/fileUpload');
 
 // @route   POST /api/taxis/register
 // @desc    Register a new taxi
@@ -12,8 +11,7 @@ const { handleTaxiDocumentUpload } = require('../middleware/fileUpload');
 router.post(
   '/register',
   authMiddleware.protect,
-  handleTaxiDocumentUpload,
-  uploadTaxiDocument.single('documents'),
+  handleFileUpload,
   authMiddleware.checkOnlineStatus,
   (req, res, next) => {
     // Add error handling for file upload

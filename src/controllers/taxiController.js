@@ -28,8 +28,8 @@ exports.registerTaxi = async (req, res) => {
       phoneNumber,
       address,
       documents: {
-        url: req.file.path, // Cloudinary URL
-        public_id: req.file.filename // Cloudinary public ID
+        url: `/uploads/${req.file.filename}`,
+    filename: req.file.filename
       },
       user: req.user.id,
       status: 'pending'

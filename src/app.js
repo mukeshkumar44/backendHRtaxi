@@ -19,7 +19,6 @@ const adminRoutes = require('./routes/adminRoutes');
 const adminBookingRoutes = require('./routes/adminBookingRoutes');
 const adminTaxiRoutes = require('./routes/adminTaxiRoutes');
 const galleryRoutes = require('./routes/galleryRoutes');
-
 const app = express();
 const server = http.createServer(app);
 
@@ -73,5 +72,15 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ success: false, message: err.message });
 });
+// Add this near the top with other middleware
+app.use(express.static('public'));
+
+// Make sure uploads directory exists
+const fs = require('fs');
+const path = require('path');
+const uploadsDir = path.join(__dirname, 'public/uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 module.exports = { app, server };
